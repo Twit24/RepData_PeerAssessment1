@@ -1,0 +1,160 @@
+--
+title: "Reproducible Research: Peer Assessment 1"
+output:
+  html_document:
+    keep_md: true
+---
+load the required libraries
+
+```r
+library(tidyverse)
+library(lubridate)
+library(stats)
+```
+
+## Loading and preprocessing the data
+
+```r
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+temp <- tempfile()
+download.file(url, temp)
+data <- read.table(unz(temp, "activity.csv"), sep =",", header = TRUE )
+unlink(temp)
+data <- as_tibble(data)
+data <- mutate(data,
+                day_of_week = wday(date),
+                weekday_weekend = if_else(day_of_week == 1 | day_of_week == 7, "weekend", "weekday")
+               )
+data$weekday_weekend <- as.factor(data$weekday_weekend)
+data_group_1 <- group_by(data, date) %>% summarise(steps = sum(steps))
+head(data)
+```
+
+```
+## # A tibble: 6 x 5
+##   steps date       interval day_of_week weekday_weekend
+##   <int> <fct>         <int>       <dbl> <fct>          
+## 1    NA 2012-10-01        0           2 weekday        
+## 2    NA 2012-10-01        5           2 weekday        
+## 3    NA 2012-10-01       10           2 weekday        
+## 4    NA 2012-10-01       15           2 weekday        
+## 5    NA 2012-10-01       20           2 weekday        
+## 6    NA 2012-10-01       25           2 weekday
+```
+
+## What is mean total number of steps taken per day?
+Histogram of Daily Steps
+
+```r
+ggplot(data_group_1, aes(x=steps)) +
+        geom_histogram(binwidth=500) +
+        labs(x = "Steps per Day", y = "Frequency", title = "Daily Number of Steps")
+```
+
+```
+## Warning: Removed 8 rows containing non-finite values (stat_bin).
+```
+
+![](assignment1_files/figure-html/unnamed-chunk-3-1.png)<!-- -->
+
+```r
+summary(data_group_1$steps)
+```
+
+```
+##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA's 
+##      41    8841   10765   10766   13294   21194       8
+```
+
+
+## What is the average daily activity pattern?
+This is an graph showing average daily activity at each interval
+
+```r
+data_group_2 <- group_by(data, interval) %>% summarise(steps = mean(steps, na.rm = TRUE))
+
+ggplot(data=data_group_2, aes(x=interval, y=steps, group=1)) +
+        geom_line() +
+        labs(x = "5-minute Intervals", y = "Number of Steps", title = "Average Steps Taken")
+```
+
+![](assignment1_files/figure-html/unnamed-chunk-5-1.png)<!-- -->
+
+This is the interval with the greatest average activity
+
+```r
+data_group_2[which.max(data_group_2$steps),]
+```
+
+```
+## # A tibble: 1 x 2
+##   interval steps
+##      <int> <dbl>
+## 1      835  206.
+```
+
+## Imputing missing values
+Find the number of missing values
+
+```r
+sum(is.na(data$steps))
+```
+
+```
+## [1] 2304
+```
+
+I use a simple random imputation. For this approach I impute missing values based on the observed data for the variable.
+
+```r
+random.imp <- function (a){
+        missing <- is.na(a)
+        n.missing <- sum(missing)
+        a.obs <- a[!missing]
+        imputed <- a
+        imputed[missing] <- sample (a.obs, n.missing, replace=TRUE)
+        return (imputed)
+}
+df.steps <- random.imp(data$steps)
+data$imputed = paste(random.imp(data$steps))
+```
+
+Histogram of Steps per Day
+
+```r
+data$imputed <- as.numeric(data$imputed)
+data_group_3 <- group_by(data, date) %>% summarise(imputed = sum(imputed))
+ggplot(data_group_3, aes(x=imputed)) +
+        geom_histogram(binwidth=500) +
+        labs(x = "Steps per Day", y = "Frequency", title = "Daily Number of Steps (imputed)")
+```
+
+![](assignment1_files/figure-html/unnamed-chunk-9-1.png)<!-- -->
+
+```r
+summary(data_group_3$imputed)
+```
+
+```
+##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+##      41    8841   10600   10679   12811   21194
+```
+These values differ slightly. In the first part, the median was 10765 and the mean was 10766. Here the median is 10597 and the mean is 10657. Also, compared to the first set, the second set's 1st quartile has increased and the 3rd quartile has decreased. By imputing the missing values it helped to account for some outliers, and actually brought the both the mean and the median down.
+
+
+## Are there differences in activity patterns between weekdays and weekends?
+
+```r
+ImputedStepsInterval <- data %>%
+        group_by(interval,weekday_weekend) %>%
+        summarise(imputed = mean(imputed))
+
+ggplot(ImputedStepsInterval, aes(x=interval, y=imputed)) +
+        geom_line() +
+        facet_grid(weekday_weekend ~ .) +
+        labs(x="5-Minute Intervals", y="Number of Steps", title = "Weekday vs. Weekend Activity (imputed)")
+```
+
+![](assignment1_files/figure-html/unnamed-chunk-11-1.png)<!-- -->
+
+ During the weekday you see a high maximum number of steps followed by a period of low activity. This differs from the weekend where there appears to be a generally moderate level of sustained activity. Despite having the interval with the highest maximum, the weekday has a lower level of overall activity when compared to the weekend.
